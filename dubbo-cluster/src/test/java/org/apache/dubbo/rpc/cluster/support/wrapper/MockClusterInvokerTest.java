@@ -16,7 +16,6 @@
  */
 package org.apache.dubbo.rpc.cluster.support.wrapper;
 
-import org.apache.dubbo.common.Constants;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.extension.ExtensionLoader;
 import org.apache.dubbo.rpc.Invocation;
@@ -39,7 +38,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.apache.dubbo.common.constants.RpcConstants.MOCK_KEY;
+import static org.apache.dubbo.rpc.Constants.MOCK_KEY;
 
 public class MockClusterInvokerTest {
 
@@ -75,7 +74,7 @@ public class MockClusterInvokerTest {
         invocation = new RpcInvocation();
         invocation.setMethodName("sayHello");
         ret = cluster.invoke(invocation);
-        Assertions.assertEquals(null, ret.getValue());
+        Assertions.assertNull(ret.getValue());
     }
 
     /**
@@ -103,13 +102,13 @@ public class MockClusterInvokerTest {
         invocation = new RpcInvocation();
         invocation.setMethodName("getSomething2");
         ret = cluster.invoke(invocation);
-        Assertions.assertEquals(null, ret.getValue());
+        Assertions.assertNull(ret.getValue());
 
         // If no mock was configured, return null directly
         invocation = new RpcInvocation();
         invocation.setMethodName("sayHello");
         ret = cluster.invoke(invocation);
-        Assertions.assertEquals(null, ret.getValue());
+        Assertions.assertNull(ret.getValue());
     }
 
 
@@ -139,13 +138,13 @@ public class MockClusterInvokerTest {
         invocation = new RpcInvocation();
         invocation.setMethodName("getSomething2");
         ret = cluster.invoke(invocation);
-        Assertions.assertEquals(null, ret.getValue());
+        Assertions.assertNull(ret.getValue());
 
         // If no mock was configured, return null directly
         invocation = new RpcInvocation();
         invocation.setMethodName("sayHello");
         ret = cluster.invoke(invocation);
-        Assertions.assertEquals(null, ret.getValue());
+        Assertions.assertNull(ret.getValue());
     }
 
     @Test
@@ -164,7 +163,7 @@ public class MockClusterInvokerTest {
         RpcInvocation invocation = new RpcInvocation();
         invocation.setMethodName("sayHello");
         Result ret = cluster.invoke(invocation);
-        Assertions.assertEquals(null, ret.getValue());
+        Assertions.assertNull(ret.getValue());
     }
 
     /**
@@ -198,7 +197,7 @@ public class MockClusterInvokerTest {
         invocation = new RpcInvocation();
         invocation.setMethodName("sayHello");
         ret = cluster.invoke(invocation);
-        Assertions.assertEquals(null, ret.getValue());
+        Assertions.assertNull(ret.getValue());
     }
 
     /**
@@ -261,13 +260,13 @@ public class MockClusterInvokerTest {
         invocation = new RpcInvocation();
         invocation.setMethodName("getSomething3");
         ret = cluster.invoke(invocation);
-        Assertions.assertEquals(null, ret.getValue());
+        Assertions.assertNull(ret.getValue());
 
         // If no mock was configured, return null directly
         invocation = new RpcInvocation();
         invocation.setMethodName("sayHello");
         ret = cluster.invoke(invocation);
-        Assertions.assertEquals(null, ret.getValue());
+        Assertions.assertNull(ret.getValue());
     }
 
     /**
@@ -482,7 +481,7 @@ public class MockClusterInvokerTest {
         invocation.setMethodName("getBoolean1");
         Result ret = cluster.invoke(invocation);
         Assertions.assertTrue(ret.getValue() instanceof Boolean, "result type must be Boolean but was : " + ret.getValue().getClass());
-        Assertions.assertEquals(true, Boolean.parseBoolean(ret.getValue().toString()));
+        Assertions.assertTrue(Boolean.parseBoolean(ret.getValue().toString()));
     }
 
     @Test
@@ -495,7 +494,7 @@ public class MockClusterInvokerTest {
         RpcInvocation invocation = new RpcInvocation();
         invocation.setMethodName("getBoolean2");
         Result ret = cluster.invoke(invocation);
-        Assertions.assertEquals(true, Boolean.parseBoolean(ret.getValue().toString()));
+        Assertions.assertTrue(Boolean.parseBoolean(ret.getValue().toString()));
     }
 
     @SuppressWarnings("unchecked")
@@ -674,12 +673,14 @@ public class MockClusterInvokerTest {
         return getClusterInvokerMock(url, null);
     }
 
-    public static interface IHelloService {
+    public interface IHelloService {
         String getSomething();
 
         String getSomething2();
 
         String getSomething3();
+
+        String getSomething4();
 
         int getInt1();
 
@@ -687,9 +688,9 @@ public class MockClusterInvokerTest {
 
         Boolean getBoolean2();
 
-        public List<String> getListString();
+        List<String> getListString();
 
-        public List<User> getUsers();
+        List<User> getUsers();
 
         void sayHello();
     }
@@ -705,6 +706,10 @@ public class MockClusterInvokerTest {
 
         public String getSomething3() {
             return "something3";
+        }
+
+        public String getSomething4(){
+            throw new RpcException("getSomething4|RpcException");
         }
 
         public int getInt1() {
@@ -747,6 +752,10 @@ public class MockClusterInvokerTest {
 
         public String getSomething3() {
             return "something3mock";
+        }
+
+        public String getSomething4(){
+            return "something4mock";
         }
 
         public List<String> getListString() {

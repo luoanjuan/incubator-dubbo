@@ -28,7 +28,7 @@ import org.apache.dubbo.rpc.RpcException;
 
 import java.util.Map;
 
-import static org.apache.dubbo.common.constants.RpcConstants.TOKEN_KEY;
+import static org.apache.dubbo.rpc.Constants.TOKEN_KEY;
 
 /**
  * Perform check whether given provider token is matching with remote token or not. If it does not match
@@ -45,8 +45,8 @@ public class TokenFilter implements Filter {
         String token = invoker.getUrl().getParameter(TOKEN_KEY);
         if (ConfigUtils.isNotEmpty(token)) {
             Class<?> serviceType = invoker.getInterface();
-            Map<String, String> attachments = inv.getAttachments();
-            String remoteToken = attachments == null ? null : attachments.get(TOKEN_KEY);
+            Map<String, Object> attachments = inv.getAttachments();
+            String remoteToken = (String) (attachments == null ? null : attachments.get(TOKEN_KEY));
             if (!token.equals(remoteToken)) {
                 throw new RpcException("Invalid token! Forbid invoke remote service " + serviceType + " method " + inv.getMethodName() + "() from consumer " + RpcContext.getContext().getRemoteHost() + " to provider " + RpcContext.getContext().getLocalHost());
             }

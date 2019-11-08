@@ -16,11 +16,11 @@
  */
 package org.apache.dubbo.rpc.cluster.directory;
 
-import org.apache.dubbo.common.Constants;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.common.utils.StringUtils;
+import org.apache.dubbo.common.utils.UrlUtils;
 import org.apache.dubbo.rpc.Invocation;
 import org.apache.dubbo.rpc.Invoker;
 import org.apache.dubbo.rpc.RpcException;
@@ -32,8 +32,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import static org.apache.dubbo.common.constants.MonitorConstants.MONITOR_KEY;
-import static org.apache.dubbo.common.constants.RegistryConstants.REGISTRY_PROTOCOL;
+import static org.apache.dubbo.common.constants.CommonConstants.MONITOR_KEY;
+import static org.apache.dubbo.rpc.cluster.Constants.REFER_KEY;
 
 /**
  * Abstract implementation of Directory: Invoker list returned from this Directory's list method have been filtered by Routers
@@ -65,8 +65,8 @@ public abstract class AbstractDirectory<T> implements Directory<T> {
             throw new IllegalArgumentException("url == null");
         }
 
-        if (url.getProtocol().equals(REGISTRY_PROTOCOL)) {
-            Map<String, String> queryMap = StringUtils.parseQueryString(url.getParameterAndDecoded(Constants.REFER_KEY));
+        if (UrlUtils.isRegistry(url)) {
+            Map<String, String> queryMap = StringUtils.parseQueryString(url.getParameterAndDecoded(REFER_KEY));
             this.url = url.addParameters(queryMap).removeParameter(MONITOR_KEY);
         } else {
             this.url = url;

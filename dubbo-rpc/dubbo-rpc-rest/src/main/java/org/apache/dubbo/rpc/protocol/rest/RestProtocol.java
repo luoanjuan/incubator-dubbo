@@ -17,11 +17,11 @@
 package org.apache.dubbo.rpc.protocol.rest;
 
 import org.apache.dubbo.common.URL;
-import org.apache.dubbo.common.constants.RemotingConstants;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.remoting.http.HttpBinder;
 import org.apache.dubbo.remoting.http.servlet.BootstrapListener;
 import org.apache.dubbo.remoting.http.servlet.ServletManager;
+import org.apache.dubbo.rpc.ProtocolServer;
 import org.apache.dubbo.rpc.RpcException;
 import org.apache.dubbo.rpc.model.ApplicationModel;
 import org.apache.dubbo.rpc.protocol.AbstractProxyProtocol;
@@ -48,15 +48,17 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import static org.apache.dubbo.common.constants.CommonConstants.COMMA_SPLIT_PATTERN;
 import static org.apache.dubbo.common.constants.CommonConstants.DEFAULT_TIMEOUT;
 import static org.apache.dubbo.common.constants.CommonConstants.INTERFACE_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.TIMEOUT_KEY;
-import static org.apache.dubbo.common.constants.RpcConstants.CONNECTIONS_KEY;
-import static org.apache.dubbo.common.constants.RpcConstants.EXTENSION_KEY;
+import static org.apache.dubbo.remoting.Constants.CONNECTIONS_KEY;
+import static org.apache.dubbo.remoting.Constants.CONNECT_TIMEOUT_KEY;
+import static org.apache.dubbo.remoting.Constants.DEFAULT_CONNECT_TIMEOUT;
+import static org.apache.dubbo.remoting.Constants.SERVER_KEY;
+import static org.apache.dubbo.rpc.protocol.rest.Constants.EXTENSION_KEY;
 
 public class RestProtocol extends AbstractProxyProtocol {
 
@@ -68,8 +70,6 @@ public class RestProtocol extends AbstractProxyProtocol {
     private static final int HTTPCLIENT_KEEPALIVEDURATION = 30 * 1000;
     private static final int HTTPCLIENTCONNECTIONMANAGER_CLOSEWAITTIME_MS = 1000;
     private static final int HTTPCLIENTCONNECTIONMANAGER_CLOSEIDLETIME_S = 30;
-
-    private final Map<String, RestServer> servers = new ConcurrentHashMap<>();
 
     private final RestServerFactory serverFactory = new RestServerFactory();
 
@@ -94,15 +94,16 @@ public class RestProtocol extends AbstractProxyProtocol {
     @Override
     protected <T> Runnable doExport(T impl, Class<T> type, URL url) throws RpcException {
         String addr = getAddr(url);
-        Class implClass = ApplicationModel.getProviderModel(url.getPathKey()).getServiceInstance().getClass();
-        RestServer server = servers.computeIfAbsent(addr, restServer -> {
-            RestServer s = serverFactory.createServer(url.getParameter(RemotingConstants.SERVER_KEY, DEFAULT_SERVER));
+        Class implClass = ApplicationModel.getProviderModel(url.getServiceKey()).getServiceInstance().getClass();
+        RestProtocolServer server = (RestProtocolServer) serverMap.computeIfAbsent(addr, restServer -> {
+            RestProtocolServer s = serverFactory.createServer(url.getParameter(SERVER_KEY, DEFAULT_SERVER));
+            s.setAddress(url.getAddress());
             s.start(url);
             return s;
         });
 
         String contextPath = getContextPath(url);
-        if ("servlet".equalsIgnoreCase(url.getParameter(RemotingConstants.SERVER_KEY, DEFAULT_SERVER))) {
+        if ("servlet".equalsIgnoreCase(url.getParameter(SERVER_KEY, DEFAULT_SERVER))) {
             ServletContext servletContext = ServletManager.getInstance().getServletContext(ServletManager.EXTERNAL_SERVER_PORT);
             if (servletContext == null) {
                 throw new RpcException("No servlet context found. Since you are using server='servlet', " +
@@ -126,7 +127,7 @@ public class RestProtocol extends AbstractProxyProtocol {
 
         server.deploy(resourceDef, impl, contextPath);
 
-        final RestServer s = server;
+        final RestProtocolServer s = server;
         return () -> {
             // TODO due to dubbo's current architecture,
             // it will be called from registry protocol in the shutdown process and won't appear in logs
@@ -149,7 +150,7 @@ public class RestProtocol extends AbstractProxyProtocol {
         }
         connectionMonitor.addConnectionManager(connectionManager);
         RequestConfig requestConfig = RequestConfig.custom()
-                .setConnectTimeout(url.getParameter(RemotingConstants.CONNECT_TIMEOUT_KEY, RemotingConstants.DEFAULT_CONNECT_TIMEOUT))
+                .setConnectTimeout(url.getParameter(CONNECT_TIMEOUT_KEY, DEFAULT_CONNECT_TIMEOUT))
                 .setSocketTimeout(url.getParameter(TIMEOUT_KEY, DEFAULT_TIMEOUT))
                 .build();
 
@@ -159,6 +160,7 @@ public class RestProtocol extends AbstractProxyProtocol {
                 .build();
 
         CloseableHttpClient httpClient = HttpClientBuilder.create()
+                .setConnectionManager(connectionManager)
                 .setKeepAliveStrategy((response, context) -> {
                     HeaderElementIterator it = new BasicHeaderElementIterator(response.headerIterator(HTTP.CONN_KEEP_ALIVE));
                     while (it.hasNext()) {
@@ -210,17 +212,17 @@ public class RestProtocol extends AbstractProxyProtocol {
             connectionMonitor.shutdown();
         }
 
-        for (Map.Entry<String, RestServer> entry : servers.entrySet()) {
+        for (Map.Entry<String, ProtocolServer> entry : serverMap.entrySet()) {
             try {
                 if (logger.isInfoEnabled()) {
                     logger.info("Closing the rest server at " + entry.getKey());
                 }
-                entry.getValue().stop();
+                entry.getValue().close();
             } catch (Throwable t) {
                 logger.warn("Error closing rest server", t);
             }
         }
-        servers.clear();
+        serverMap.clear();
 
         if (logger.isInfoEnabled()) {
             logger.info("Closing rest clients");

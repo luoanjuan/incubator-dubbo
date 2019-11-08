@@ -17,10 +17,10 @@
 package org.apache.dubbo.rpc.protocol.hessian;
 
 import org.apache.dubbo.common.URL;
-import org.apache.dubbo.common.constants.RemotingConstants;
+import org.apache.dubbo.remoting.RemotingServer;
 import org.apache.dubbo.remoting.http.HttpBinder;
 import org.apache.dubbo.remoting.http.HttpHandler;
-import org.apache.dubbo.remoting.http.HttpServer;
+import org.apache.dubbo.rpc.ProtocolServer;
 import org.apache.dubbo.rpc.RpcContext;
 import org.apache.dubbo.rpc.RpcException;
 import org.apache.dubbo.rpc.protocol.AbstractProxyProtocol;
@@ -46,18 +46,19 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.apache.dubbo.common.constants.CommonConstants.DEFAULT_TIMEOUT;
 import static org.apache.dubbo.common.constants.CommonConstants.TIMEOUT_KEY;
-import static org.apache.dubbo.common.constants.RpcConstants.HESSIAN2_REQUEST_KEY;
-import static org.apache.dubbo.common.constants.RpcConstants.DEFAULT_HESSIAN2_REQUEST;
-import static org.apache.dubbo.common.constants.RpcConstants.HESSIAN_OVERLOAD_METHOD_KEY;
-import static org.apache.dubbo.common.constants.RpcConstants.DEFAULT_HESSIAN_OVERLOAD_METHOD;
-import static org.apache.dubbo.common.constants.RpcConstants.DEFAULT_HTTP_CLIENT;
-import static org.apache.dubbo.common.constants.RpcConstants.GENERIC_KEY;
+import static org.apache.dubbo.remoting.Constants.CLIENT_KEY;
+import static org.apache.dubbo.remoting.Constants.DEFAULT_EXCHANGER;
+import static org.apache.dubbo.rpc.Constants.GENERIC_KEY;
+import static org.apache.dubbo.rpc.protocol.hessian.Constants.DEFAULT_HESSIAN2_REQUEST;
+import static org.apache.dubbo.rpc.protocol.hessian.Constants.DEFAULT_HESSIAN_OVERLOAD_METHOD;
+import static org.apache.dubbo.rpc.protocol.hessian.Constants.DEFAULT_HTTP_CLIENT;
+import static org.apache.dubbo.rpc.protocol.hessian.Constants.HESSIAN2_REQUEST_KEY;
+import static org.apache.dubbo.rpc.protocol.hessian.Constants.HESSIAN_OVERLOAD_METHOD_KEY;
+
 /**
  * http rpc support.
  */
 public class HessianProtocol extends AbstractProxyProtocol {
-
-    private final Map<String, HttpServer> serverMap = new ConcurrentHashMap<String, HttpServer>();
 
     private final Map<String, HessianSkeleton> skeletonMap = new ConcurrentHashMap<String, HessianSkeleton>();
 
@@ -79,10 +80,10 @@ public class HessianProtocol extends AbstractProxyProtocol {
     @Override
     protected <T> Runnable doExport(T impl, Class<T> type, URL url) throws RpcException {
         String addr = getAddr(url);
-        HttpServer server = serverMap.get(addr);
-        if (server == null) {
-            server = httpBinder.bind(url, new HessianHandler());
-            serverMap.put(addr, server);
+        ProtocolServer protocolServer = serverMap.get(addr);
+        if (protocolServer == null) {
+            RemotingServer remotingServer = httpBinder.bind(url, new HessianHandler());
+            serverMap.put(addr, new ProxyProtocolServer(remotingServer));
         }
         final String path = url.getAbsolutePath();
         final HessianSkeleton skeleton = new HessianSkeleton(impl, type);
@@ -115,7 +116,7 @@ public class HessianProtocol extends AbstractProxyProtocol {
         hessianProxyFactory.setHessian2Request(isHessian2Request);
         boolean isOverloadEnabled = url.getParameter(HESSIAN_OVERLOAD_METHOD_KEY, DEFAULT_HESSIAN_OVERLOAD_METHOD);
         hessianProxyFactory.setOverloadEnabled(isOverloadEnabled);
-        String client = url.getParameter(RemotingConstants.CLIENT_KEY, DEFAULT_HTTP_CLIENT);
+        String client = url.getParameter(CLIENT_KEY, DEFAULT_HTTP_CLIENT);
         if ("httpclient".equals(client)) {
             HessianConnectionFactory factory = new HttpClientConnectionFactory();
             factory.setHessianProxyFactory(hessianProxyFactory);
@@ -153,13 +154,13 @@ public class HessianProtocol extends AbstractProxyProtocol {
     public void destroy() {
         super.destroy();
         for (String key : new ArrayList<String>(serverMap.keySet())) {
-            HttpServer server = serverMap.remove(key);
-            if (server != null) {
+            ProtocolServer protocolServer = serverMap.remove(key);
+            if (protocolServer != null) {
                 try {
                     if (logger.isInfoEnabled()) {
-                        logger.info("Close hessian server " + server.getUrl());
+                        logger.info("Close hessian server " + protocolServer.getUrl());
                     }
-                    server.close();
+                    protocolServer.close();
                 } catch (Throwable t) {
                     logger.warn(t.getMessage(), t);
                 }
@@ -174,7 +175,7 @@ public class HessianProtocol extends AbstractProxyProtocol {
                 throws IOException, ServletException {
             String uri = request.getRequestURI();
             HessianSkeleton skeleton = skeletonMap.get(uri);
-            if (!request.getMethod().equalsIgnoreCase("POST")) {
+            if (!"POST".equalsIgnoreCase(request.getMethod())) {
                 response.setStatus(500);
             } else {
                 RpcContext.getContext().setRemoteAddress(request.getRemoteAddr(), request.getRemotePort());
@@ -182,8 +183,8 @@ public class HessianProtocol extends AbstractProxyProtocol {
                 Enumeration<String> enumeration = request.getHeaderNames();
                 while (enumeration.hasMoreElements()) {
                     String key = enumeration.nextElement();
-                    if (key.startsWith(RemotingConstants.DEFAULT_EXCHANGER)) {
-                        RpcContext.getContext().setAttachment(key.substring(RemotingConstants.DEFAULT_EXCHANGER.length()),
+                    if (key.startsWith(DEFAULT_EXCHANGER)) {
+                        RpcContext.getContext().setAttachment(key.substring(DEFAULT_EXCHANGER.length()),
                                 request.getHeader(key));
                     }
                 }

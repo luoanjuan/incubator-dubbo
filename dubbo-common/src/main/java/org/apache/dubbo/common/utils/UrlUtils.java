@@ -16,7 +16,6 @@
  */
 package org.apache.dubbo.common.utils;
 
-import org.apache.dubbo.common.Constants;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.constants.RemotingConstants;
 
@@ -28,16 +27,22 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static java.util.Collections.emptyMap;
 import static org.apache.dubbo.common.constants.CommonConstants.ANY_VALUE;
 import static org.apache.dubbo.common.constants.CommonConstants.CLASSIFIER_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.COMMA_SPLIT_PATTERN;
+import static org.apache.dubbo.common.constants.CommonConstants.DUBBO_PROTOCOL;
 import static org.apache.dubbo.common.constants.CommonConstants.ENABLED_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.GROUP_KEY;
+import static org.apache.dubbo.common.constants.CommonConstants.HOST_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.INTERFACE_KEY;
+import static org.apache.dubbo.common.constants.CommonConstants.PASSWORD_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.PATH_KEY;
+import static org.apache.dubbo.common.constants.CommonConstants.PORT_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.PROTOCOL_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.REGISTRY_SPLIT_PATTERN;
 import static org.apache.dubbo.common.constants.CommonConstants.REMOVE_VALUE_PREFIX;
+import static org.apache.dubbo.common.constants.CommonConstants.USERNAME_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.VERSION_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.CATEGORY_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.CONFIGURATORS_CATEGORY;
@@ -45,8 +50,12 @@ import static org.apache.dubbo.common.constants.RegistryConstants.DEFAULT_CATEGO
 import static org.apache.dubbo.common.constants.RegistryConstants.EMPTY_PROTOCOL;
 import static org.apache.dubbo.common.constants.RegistryConstants.OVERRIDE_PROTOCOL;
 import static org.apache.dubbo.common.constants.RegistryConstants.PROVIDERS_CATEGORY;
+import static org.apache.dubbo.common.constants.RegistryConstants.REGISTRY_PROTOCOL;
+import static org.apache.dubbo.common.constants.RegistryConstants.REGISTRY_TYPE_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.ROUTERS_CATEGORY;
 import static org.apache.dubbo.common.constants.RegistryConstants.ROUTE_PROTOCOL;
+import static org.apache.dubbo.common.constants.RegistryConstants.SERVICE_REGISTRY_PROTOCOL;
+import static org.apache.dubbo.common.constants.RegistryConstants.SERVICE_REGISTRY_TYPE;
 
 public class UrlUtils {
 
@@ -78,19 +87,19 @@ public class UrlUtils {
         }
         String defaultProtocol = defaults == null ? null : defaults.get(PROTOCOL_KEY);
         if (defaultProtocol == null || defaultProtocol.length() == 0) {
-            defaultProtocol = Constants.DUBBO_PROTOCOL;
+            defaultProtocol = DUBBO_PROTOCOL;
         }
-        String defaultUsername = defaults == null ? null : defaults.get(Constants.USERNAME_KEY);
-        String defaultPassword = defaults == null ? null : defaults.get(Constants.PASSWORD_KEY);
-        int defaultPort = StringUtils.parseInteger(defaults == null ? null : defaults.get(Constants.PORT_KEY));
+        String defaultUsername = defaults == null ? null : defaults.get(USERNAME_KEY);
+        String defaultPassword = defaults == null ? null : defaults.get(PASSWORD_KEY);
+        int defaultPort = StringUtils.parseInteger(defaults == null ? null : defaults.get(PORT_KEY));
         String defaultPath = defaults == null ? null : defaults.get(PATH_KEY);
         Map<String, String> defaultParameters = defaults == null ? null : new HashMap<String, String>(defaults);
         if (defaultParameters != null) {
             defaultParameters.remove(PROTOCOL_KEY);
-            defaultParameters.remove(Constants.USERNAME_KEY);
-            defaultParameters.remove(Constants.PASSWORD_KEY);
-            defaultParameters.remove(Constants.HOST_KEY);
-            defaultParameters.remove(Constants.PORT_KEY);
+            defaultParameters.remove(USERNAME_KEY);
+            defaultParameters.remove(PASSWORD_KEY);
+            defaultParameters.remove(HOST_KEY);
+            defaultParameters.remove(PORT_KEY);
             defaultParameters.remove(PATH_KEY);
         }
         URL u = URL.valueOf(url);
@@ -480,17 +489,33 @@ public class UrlUtils {
                 PROVIDERS_CATEGORY.equals(url.getParameter(CATEGORY_KEY, PROVIDERS_CATEGORY));
     }
 
-    public static int getHeartbeat(URL url) {
-        return url.getParameter(RemotingConstants.HEARTBEAT_KEY, RemotingConstants.DEFAULT_HEARTBEAT);
+    public static boolean isRegistry(URL url) {
+        return REGISTRY_PROTOCOL.equals(url.getProtocol()) || SERVICE_REGISTRY_PROTOCOL.equalsIgnoreCase(url.getProtocol());
     }
 
-    public static int getIdleTimeout(URL url) {
-        int heartBeat = getHeartbeat(url);
-        int idleTimeout = url.getParameter(RemotingConstants.HEARTBEAT_TIMEOUT_KEY, heartBeat * 3);
-        if (idleTimeout < heartBeat * 2) {
-            throw new IllegalStateException("idleTimeout < heartbeatInterval * 2");
+    /**
+     * The specified {@link URL} is service discovery registry type or not
+     *
+     * @param url the {@link URL} connects to the registry
+     * @return If it is, return <code>true</code>, or <code>false</code>
+     * @since 2.7.4
+     */
+    public static boolean isServiceDiscoveryRegistryType(URL url) {
+        return isServiceDiscoveryRegistryType(url == null ? emptyMap() : url.getParameters());
+    }
+
+    /**
+     * The specified parameters of {@link URL} is service discovery registry type or not
+     *
+     * @param parameters the parameters of {@link URL} that connects to the registry
+     * @return If it is, return <code>true</code>, or <code>false</code>
+     * @since 2.7.4
+     */
+    public static boolean isServiceDiscoveryRegistryType(Map<String, String> parameters) {
+        if (parameters == null || parameters.isEmpty()) {
+            return false;
         }
-        return idleTimeout;
+        return SERVICE_REGISTRY_TYPE.equals(parameters.get(REGISTRY_TYPE_KEY));
     }
 
     /**
@@ -506,5 +531,26 @@ public class UrlUtils {
         } else {
             return "*".equals(pattern) || pattern.equals(value);
         }
+    }
+
+    /**
+     * @param serviceKey, {group}/{interfaceName}:{version}
+     * @return [group, interfaceName, version]
+     */
+    public static String[] parseServiceKey(String serviceKey) {
+        String[] arr = new String[3];
+        int i = serviceKey.indexOf("/");
+        if (i > 0) {
+            arr[0] = serviceKey.substring(0, i);
+            serviceKey = serviceKey.substring(i + 1);
+        }
+
+        int j = serviceKey.indexOf(":");
+        if (j > 0) {
+            arr[2] = serviceKey.substring(j + 1);
+            serviceKey = serviceKey.substring(0, j);
+        }
+        arr[1] = serviceKey;
+        return arr;
     }
 }

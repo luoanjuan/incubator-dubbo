@@ -16,7 +16,6 @@
  */
 package org.apache.dubbo.registry.support;
 
-import org.apache.dubbo.common.Constants;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.URLBuilder;
 import org.apache.dubbo.common.logger.Logger;
@@ -32,6 +31,8 @@ import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static org.apache.dubbo.common.constants.CommonConstants.INTERFACE_KEY;
+import static org.apache.dubbo.rpc.cluster.Constants.EXPORT_KEY;
+import static org.apache.dubbo.rpc.cluster.Constants.REFER_KEY;
 
 /**
  * AbstractRegistryFactory. (SPI, Singleton, ThreadSafe)
@@ -58,10 +59,13 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
         return Collections.unmodifiableCollection(REGISTRIES.values());
     }
 
+    public static Registry getRegistry(String key) {
+        return REGISTRIES.get(key);
+    }
+
     /**
      * Close all created registries
      */
-    // TODO: 2017/8/30 to move somewhere else better
     public static void destroyAll() {
         if (LOGGER.isInfoEnabled()) {
             LOGGER.info("Close all registries " + getRegistries());
@@ -88,7 +92,7 @@ public abstract class AbstractRegistryFactory implements RegistryFactory {
         url = URLBuilder.from(url)
                 .setPath(RegistryService.class.getName())
                 .addParameter(INTERFACE_KEY, RegistryService.class.getName())
-                .removeParameters(Constants.EXPORT_KEY, Constants.REFER_KEY)
+                .removeParameters(EXPORT_KEY, REFER_KEY)
                 .build();
         String key = url.toServiceStringWithoutResolving();
         // Lock the registry access process to ensure a single instance of the registry

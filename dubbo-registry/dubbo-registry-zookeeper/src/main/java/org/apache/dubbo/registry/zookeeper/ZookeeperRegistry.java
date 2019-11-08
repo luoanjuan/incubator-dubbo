@@ -18,7 +18,6 @@ package org.apache.dubbo.registry.zookeeper;
 
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.URLBuilder;
-import org.apache.dubbo.common.constants.RemotingConstants;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.common.utils.CollectionUtils;
@@ -26,6 +25,7 @@ import org.apache.dubbo.common.utils.ConcurrentHashSet;
 import org.apache.dubbo.common.utils.UrlUtils;
 import org.apache.dubbo.registry.NotifyListener;
 import org.apache.dubbo.registry.support.FailbackRegistry;
+import org.apache.dubbo.remoting.Constants;
 import org.apache.dubbo.remoting.zookeeper.ChildListener;
 import org.apache.dubbo.remoting.zookeeper.StateListener;
 import org.apache.dubbo.remoting.zookeeper.ZookeeperClient;
@@ -33,7 +33,9 @@ import org.apache.dubbo.remoting.zookeeper.ZookeeperTransporter;
 import org.apache.dubbo.rpc.RpcException;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -60,8 +62,6 @@ public class ZookeeperRegistry extends FailbackRegistry {
 
     private final static Logger logger = LoggerFactory.getLogger(ZookeeperRegistry.class);
 
-    private final static int DEFAULT_ZOOKEEPER_PORT = 2181;
-
     private final static String DEFAULT_ROOT = "dubbo";
 
     private final String root;
@@ -83,13 +83,26 @@ public class ZookeeperRegistry extends FailbackRegistry {
         }
         this.root = group;
         zkClient = zookeeperTransporter.connect(url);
-        zkClient.addStateListener(state -> {
+        zkClient.addStateListener((state) -> {
             if (state == StateListener.RECONNECTED) {
+                logger.warn("Trying to fetch the latest urls, in case there're provider changes during connection loss.\n" +
+                        " Since ephemeral ZNode will not get deleted for a connection lose, " +
+                        "there's no need to re-register url of this instance.");
+                ZookeeperRegistry.this.fetchLatestAddresses();
+            } else if (state == StateListener.NEW_SESSION_CREATED) {
+                logger.warn("Trying to re-register urls and re-subscribe listeners of this instance to registry...");
                 try {
-                    recover();
+                    ZookeeperRegistry.this.recover();
                 } catch (Exception e) {
                     logger.error(e.getMessage(), e);
                 }
+            } else if (state == StateListener.SESSION_LOST) {
+                logger.warn("Url of this instance will be deleted from registry soon. " +
+                        "Dubbo client will try to re-register once a new session is created.");
+            } else if (state == StateListener.SUSPENDED) {
+
+            } else if (state == StateListener.CONNECTED) {
+
             }
         });
     }
@@ -145,7 +158,7 @@ public class ZookeeperRegistry extends FailbackRegistry {
                             if (!anyServices.contains(child)) {
                                 anyServices.add(child);
                                 subscribe(url.setPath(child).addParameters(INTERFACE_KEY, child,
-                                        RemotingConstants.CHECK_KEY, String.valueOf(false)), listener);
+                                        Constants.CHECK_KEY, String.valueOf(false)), listener);
                             }
                         }
                     });
@@ -158,7 +171,7 @@ public class ZookeeperRegistry extends FailbackRegistry {
                         service = URL.decode(service);
                         anyServices.add(service);
                         subscribe(url.setPath(service).addParameters(INTERFACE_KEY, service,
-                                RemotingConstants.CHECK_KEY, String.valueOf(false)), listener);
+                                Constants.CHECK_KEY, String.valueOf(false)), listener);
                     }
                 }
             } else {
@@ -293,6 +306,26 @@ public class ZookeeperRegistry extends FailbackRegistry {
             urls.add(empty);
         }
         return urls;
+    }
+
+    /**
+     * When zookeeper connection recovered from a connection loss, it need to fetch the latest provider list.
+     * re-register watcher is only a side effect and is not mandate.
+     */
+    private void fetchLatestAddresses() {
+        // subscribe
+        Map<URL, Set<NotifyListener>> recoverSubscribed = new HashMap<URL, Set<NotifyListener>>(getSubscribed());
+        if (!recoverSubscribed.isEmpty()) {
+            if (logger.isInfoEnabled()) {
+                logger.info("Fetching the latest urls of " + recoverSubscribed.keySet());
+            }
+            for (Map.Entry<URL, Set<NotifyListener>> entry : recoverSubscribed.entrySet()) {
+                URL url = entry.getKey();
+                for (NotifyListener listener : entry.getValue()) {
+                    addFailedSubscribed(url, listener);
+                }
+            }
+        }
     }
 
 }
