@@ -20,10 +20,11 @@ import org.apache.dubbo.common.utils.CollectionUtils;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -33,8 +34,8 @@ import java.util.Set;
 public class ServiceDescriptor {
     private final String serviceName;
     private final Class<?> serviceInterfaceClass;
-    // to accelarate search
-    private final Map<String, Set<MethodDescriptor>> methods = new HashMap<>();
+    // to accelerate search
+    private final Map<String, List<MethodDescriptor>> methods = new HashMap<>();
     private final Map<String, Map<String, MethodDescriptor>> descToMethods = new HashMap<>();
 
     public ServiceDescriptor(Class<?> interfaceClass) {
@@ -44,13 +45,11 @@ public class ServiceDescriptor {
     }
 
     private void initMethods() {
-        Method[] methodsToExport = null;
-        methodsToExport = this.serviceInterfaceClass.getMethods();
-
+        Method[] methodsToExport = this.serviceInterfaceClass.getMethods();
         for (Method method : methodsToExport) {
             method.setAccessible(true);
 
-            Set<MethodDescriptor> methodModels = methods.computeIfAbsent(method.getName(), (k) -> new HashSet<>(1));
+            List<MethodDescriptor> methodModels = methods.computeIfAbsent(method.getName(), (k) -> new ArrayList<>(1));
             methodModels.add(new MethodDescriptor(method));
         }
 
@@ -77,27 +76,42 @@ public class ServiceDescriptor {
         return methodModels;
     }
 
-    public Optional<MethodDescriptor> getMethod(String methodName, String params) {
+    /**
+     * Does not use Optional as return type to avoid potential performance decrease.
+     *
+     * @param methodName
+     * @param params
+     * @return
+     */
+    public MethodDescriptor getMethod(String methodName, String params) {
         Map<String, MethodDescriptor> methods = descToMethods.get(methodName);
         if (CollectionUtils.isNotEmptyMap(methods)) {
-            return Optional.ofNullable(methods.get(params));
+            return methods.get(params);
         }
-        return Optional.empty();
+        return null;
     }
 
-    public Optional<MethodDescriptor> getMethod(String methodName, Class<?>[] paramTypes) {
-        Set<MethodDescriptor> methodModels = methods.get(methodName);
+    /**
+     * Does not use Optional as return type to avoid potential performance decrease.
+     *
+     * @param methodName
+     * @param paramTypes
+     * @return
+     */
+    public MethodDescriptor getMethod(String methodName, Class<?>[] paramTypes) {
+        List<MethodDescriptor> methodModels = methods.get(methodName);
         if (CollectionUtils.isNotEmpty(methodModels)) {
-            for (MethodDescriptor methodModel : methodModels) {
-                if (Arrays.equals(paramTypes, methodModel.getParameterClasses())) {
-                    return Optional.of(methodModel);
+            for (int i = 0; i < methodModels.size(); i++) {
+                MethodDescriptor descriptor = methodModels.get(i);
+                if (Arrays.equals(paramTypes, descriptor.getParameterClasses())) {
+                    return descriptor;
                 }
             }
         }
-        return Optional.empty();
+        return null;
     }
 
-    public Set<MethodDescriptor> getMethods(String methodName) {
+    public List<MethodDescriptor> getMethods(String methodName) {
         return methods.get(methodName);
     }
 

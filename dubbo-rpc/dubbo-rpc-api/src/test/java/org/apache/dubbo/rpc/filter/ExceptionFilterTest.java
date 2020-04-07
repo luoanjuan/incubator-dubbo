@@ -60,6 +60,7 @@ public class ExceptionFilterTest {
             exceptionFilter.invoke(invoker, invocation);
         } catch (RpcException e) {
             assertEquals("TestRpcException", e.getMessage());
+            exceptionFilter.setLogger(logger);
             exceptionFilter.onError(e, invoker, invocation);
         }
 
@@ -128,7 +129,7 @@ public class ExceptionFilterTest {
         Result asyncResult = exceptionFilter.invoke(invoker, invocation);
 
         AppResponse appResponse = (AppResponse) asyncResult.get();
-        exceptionFilter.onMessage(appResponse, invoker, invocation);
+        exceptionFilter.onResponse(appResponse, invoker, invocation);
 
         Assertions.assertFalse(appResponse.getException() instanceof HessianException);
 

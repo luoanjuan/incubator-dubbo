@@ -33,6 +33,7 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static java.lang.String.valueOf;
 import static org.apache.dubbo.common.constants.CommonConstants.COMMA_SEPARATOR;
 import static org.apache.dubbo.common.constants.CommonConstants.COMMA_SPLIT_PATTERN;
 import static org.apache.dubbo.common.constants.CommonConstants.DOT_REGEX;
@@ -49,14 +50,43 @@ import static org.apache.dubbo.common.constants.CommonConstants.VERSION_KEY;
 
 public final class StringUtils {
 
-    public static final String EMPTY = "";
+    public static final String EMPTY_STRING = "";
     public static final int INDEX_NOT_FOUND = -1;
     public static final String[] EMPTY_STRING_ARRAY = new String[0];
 
     private static final Logger logger = LoggerFactory.getLogger(StringUtils.class);
     private static final Pattern KVP_PATTERN = Pattern.compile("([_.a-zA-Z0-9][-_.a-zA-Z0-9]*)[=](.*)"); //key value pair pattern.
     private static final Pattern INT_PATTERN = Pattern.compile("^\\d+$");
+    private static final Pattern PARAMETERS_PATTERN = Pattern.compile("^\\[((\\s*\\{\\s*[\\w_\\-\\.]+\\s*:\\s*.+?\\s*\\}\\s*,?\\s*)+)\\s*\\]$");
+    private static final Pattern PAIR_PARAMETERS_PATTERN = Pattern.compile("^\\{\\s*([\\w-_\\.]+)\\s*:\\s*(.+)\\s*\\}$");
     private static final int PAD_LIMIT = 8192;
+
+    /**
+     * @since 2.7.5
+     */
+    public static final char EQUAL_CHAR = '=';
+
+    public static final String EQUAL = valueOf(EQUAL_CHAR);
+
+    public static final char AND_CHAR = '&';
+
+    public static final String AND = valueOf(AND_CHAR);
+
+    public static final char SEMICOLON_CHAR = ';';
+
+    public static final String SEMICOLON = valueOf(SEMICOLON_CHAR);
+
+    public static final char QUESTION_MASK_CHAR = '?';
+
+    public static final String QUESTION_MASK = valueOf(QUESTION_MASK_CHAR);
+
+    public static final char SLASH_CHAR = '/';
+
+    public static final String SLASH = valueOf(SLASH_CHAR);
+
+    public static final char HYPHEN_CHAR = '-';
+
+    public static final String HYPHEN = valueOf(HYPHEN_CHAR);
 
     private StringUtils() {
     }
@@ -98,7 +128,7 @@ public final class StringUtils {
             return null;
         }
         if (repeat <= 0) {
-            return EMPTY;
+            return EMPTY_STRING;
         }
         final int inputLength = str.length();
         if (repeat == 1 || inputLength == 0) {
@@ -480,6 +510,14 @@ public final class StringUtils {
         return isNotEmpty(values) && isContains(COMMA_SPLIT_PATTERN.split(values), value);
     }
 
+    public static boolean isContains(String str, char ch) {
+        return isNotEmpty(str) && str.indexOf(ch) >= 0;
+    }
+
+    public static boolean isNotContains(String str, char ch) {
+        return !isContains(str, ch);
+    }
+
     /**
      * @param values
      * @param value
@@ -597,23 +635,38 @@ public final class StringUtils {
      * @return string array.
      */
     public static String[] split(String str, char ch) {
-        List<String> list = null;
-        char c;
+        if (isEmpty(str)) {
+            return EMPTY_STRING_ARRAY;
+        }
+        return splitToList0(str, ch).toArray(EMPTY_STRING_ARRAY);
+    }
+
+    private static List<String> splitToList0(String str, char ch) {
+        List<String> result = new ArrayList<>();
         int ix = 0, len = str.length();
         for (int i = 0; i < len; i++) {
-            c = str.charAt(i);
-            if (c == ch) {
-                if (list == null) {
-                    list = new ArrayList<String>();
-                }
-                list.add(str.substring(ix, i));
+            if (str.charAt(i) == ch) {
+                result.add(str.substring(ix, i));
                 ix = i + 1;
             }
         }
-        if (ix > 0) {
-            list.add(str.substring(ix));
+
+        if (ix >= 0) {
+            result.add(str.substring(ix));
         }
-        return list == null ? EMPTY_STRING_ARRAY : (String[]) list.toArray(EMPTY_STRING_ARRAY);
+        return result;
+    }
+
+    /**
+     * Splits String around matches of the given character.
+     * <p>
+     * Note: Compare with {@link StringUtils#split(String, char)}, this method reduce memory copy.
+     */
+    public static List<String> splitToList(String str, char ch) {
+        if (isEmpty(str)) {
+            return Collections.emptyList();
+        }
+        return splitToList0(str, ch);
     }
 
     /**
@@ -624,7 +677,7 @@ public final class StringUtils {
      */
     public static String join(String[] array) {
         if (ArrayUtils.isEmpty(array)) {
-            return EMPTY;
+            return EMPTY_STRING;
         }
         StringBuilder sb = new StringBuilder();
         for (String s : array) {
@@ -642,7 +695,7 @@ public final class StringUtils {
      */
     public static String join(String[] array, char split) {
         if (ArrayUtils.isEmpty(array)) {
-            return EMPTY;
+            return EMPTY_STRING;
         }
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < array.length; i++) {
@@ -663,7 +716,7 @@ public final class StringUtils {
      */
     public static String join(String[] array, String split) {
         if (ArrayUtils.isEmpty(array)) {
-            return EMPTY;
+            return EMPTY_STRING;
         }
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < array.length; i++) {
@@ -677,7 +730,7 @@ public final class StringUtils {
 
     public static String join(Collection<String> coll, String split) {
         if (CollectionUtils.isEmpty(coll)) {
-            return EMPTY;
+            return EMPTY_STRING;
         }
 
         StringBuilder sb = new StringBuilder();
@@ -829,7 +882,7 @@ public final class StringUtils {
         if (str != null && !isEmpty(str)) {
             int sz = str.length();
 
-            for(int i = 0; i < sz; ++i) {
+            for (int i = 0; i < sz; ++i) {
                 if (!Character.isUpperCase(str.charAt(i))) {
                     return false;
                 }
@@ -929,10 +982,8 @@ public final class StringUtils {
      * @return
      */
     public static Map<String, String> parseParameters(String rawParameters) {
-        Pattern pattern = Pattern.compile("^\\[((\\s*\\{\\s*[\\w_\\-\\.]+\\s*:\\s*.+?\\s*\\}\\s*,?\\s*)+)\\s*\\]$");
-        Pattern pairPattern = Pattern.compile("^\\{\\s*([\\w-_\\.]+)\\s*:\\s*(.+)\\s*\\}$");
 
-        Matcher matcher = pattern.matcher(rawParameters);
+        Matcher matcher = PARAMETERS_PATTERN.matcher(rawParameters);
         if (!matcher.matches()) {
             return Collections.emptyMap();
         }
@@ -942,7 +993,7 @@ public final class StringUtils {
 
         Map<String, String> parameters = new HashMap<>();
         for (String pair : pairArr) {
-            Matcher pairMatcher = pairPattern.matcher(pair);
+            Matcher pairMatcher = PAIR_PARAMETERS_PATTERN.matcher(pair);
             if (pairMatcher.matches()) {
                 parameters.put(pairMatcher.group(1), pairMatcher.group(2));
             }

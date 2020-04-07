@@ -16,7 +16,6 @@
  */
 package org.apache.dubbo.config;
 
-import org.apache.dubbo.config.service.ServiceConfig;
 import org.apache.dubbo.config.support.Parameter;
 
 import java.util.ArrayList;
@@ -27,7 +26,7 @@ import java.util.Arrays;
  *
  * @export
  * @see org.apache.dubbo.config.ProtocolConfig
- * @see ServiceConfig
+ * @see ServiceConfigBase
  */
 public class ProviderConfig extends AbstractServiceConfig {
 
@@ -54,6 +53,11 @@ public class ProviderConfig extends AbstractServiceConfig {
      * Thread pool
      */
     private String threadpool;
+
+    /**
+     * Thread pool name
+     */
+    private String threadname;
 
     /**
      * Thread pool size (fixed size)
@@ -210,6 +214,14 @@ public class ProviderConfig extends AbstractServiceConfig {
 
     public void setThreadpool(String threadpool) {
         this.threadpool = threadpool;
+    }
+
+    public String getThreadname() {
+        return threadname;
+    }
+
+    public void setThreadname(String threadname) {
+        this.threadname = threadname;
     }
 
     public Integer getThreads() {

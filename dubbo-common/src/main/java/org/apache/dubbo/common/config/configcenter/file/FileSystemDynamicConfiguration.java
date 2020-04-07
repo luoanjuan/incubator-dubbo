@@ -27,7 +27,6 @@ import org.apache.dubbo.common.function.ThrowableFunction;
 import org.apache.dubbo.common.utils.NamedThreadFactory;
 import org.apache.dubbo.common.utils.StringUtils;
 
-import com.sun.nio.file.SensitivityWatchEventModifier;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -49,7 +48,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.SortedMap;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.Callable;
@@ -74,7 +72,7 @@ import static org.apache.dubbo.common.utils.StringUtils.isBlank;
 /**
  * File-System based {@link DynamicConfiguration} implementation
  *
- * @since 2.7.4
+ * @since 2.7.5
  */
 public class FileSystemDynamicConfiguration extends AbstractDynamicConfiguration {
 
@@ -125,14 +123,14 @@ public class FileSystemDynamicConfiguration extends AbstractDynamicConfiguration
      *
      * @see #detectPoolingBasedWatchService(Optional)
      */
-    private static final boolean basedPoolingWatchService;
+    private static final boolean BASED_POOLING_WATCH_SERVICE;
 
-    private static final WatchEvent.Modifier[] modifiers;
+    private static final WatchEvent.Modifier[] MODIFIERS;
 
     /**
      * the delay to action in seconds. If null, execute indirectly
      */
-    private static final Integer delay;
+    private static final Integer DELAY;
 
     /**
      * The thread pool for {@link WatchEvent WatchEvents} loop
@@ -140,15 +138,15 @@ public class FileSystemDynamicConfiguration extends AbstractDynamicConfiguration
      *
      * @see ThreadPoolExecutor
      */
-    private static final ThreadPoolExecutor watchEventsLoopThreadPool;
+    private static final ThreadPoolExecutor WATCH_EVENTS_LOOP_THREAD_POOL;
 
     // static initialization
     static {
         watchService = newWatchService();
-        basedPoolingWatchService = detectPoolingBasedWatchService(watchService);
-        modifiers = initWatchEventModifiers();
-        delay = initDelay(modifiers);
-        watchEventsLoopThreadPool = newWatchEventsLoopThreadPool();
+        BASED_POOLING_WATCH_SERVICE = detectPoolingBasedWatchService(watchService);
+        MODIFIERS = initWatchEventModifiers();
+        DELAY = initDelay(MODIFIERS);
+        WATCH_EVENTS_LOOP_THREAD_POOL = newWatchEventsLoopThreadPool();
     }
 
     /**
@@ -222,7 +220,7 @@ public class FileSystemDynamicConfiguration extends AbstractDynamicConfiguration
                     File configDirectory = configFile.getParentFile();
                     if (configDirectory != null) {
                         // Register the configDirectory
-                        configDirectory.toPath().register(watchService.get(), INTEREST_PATH_KINDS, modifiers);
+                        configDirectory.toPath().register(watchService.get(), INTEREST_PATH_KINDS, MODIFIERS);
                     }
                 });
             }
@@ -369,6 +367,17 @@ public class FileSystemDynamicConfiguration extends AbstractDynamicConfiguration
     }
 
     @Override
+    public SortedSet<String> getConfigKeys(String group) {
+        File[] files = groupDirectory(group).listFiles(File::isFile);
+        if (files == null) {
+            return new TreeSet<>();
+        } else {
+            return Stream.of(files)
+                    .map(File::getName)
+                    .collect(TreeSet::new, Set::add, Set::addAll);
+        }
+    }
+
     public String removeConfig(String key, String group) {
         return delay(key, group, configFile -> {
 
@@ -443,30 +452,11 @@ public class FileSystemDynamicConfiguration extends AbstractDynamicConfiguration
         processingDirectories.add(configDirectory);
     }
 
-    @Override
-    public SortedSet<String> getConfigKeys(String group) {
-        File[] files = groupDirectory(group).listFiles(File::isFile);
-        if (files == null) {
-            return new TreeSet<>();
-        } else {
-            return Stream.of(files)
-                    .map(File::getName)
-                    .collect(TreeSet::new, Set::add, Set::addAll);
-        }
-    }
-
-
-    @Override
     public Set<String> getConfigGroups() {
         return Stream.of(getRootDirectory().listFiles())
                 .filter(File::isDirectory)
                 .map(File::getName)
                 .collect(Collectors.toSet());
-    }
-
-    @Override
-    public SortedMap<String, String> getConfigs(String group) throws UnsupportedOperationException {
-        return getConfigs(group, -1);
     }
 
     @Override
@@ -494,7 +484,7 @@ public class FileSystemDynamicConfiguration extends AbstractDynamicConfiguration
     }
 
     protected Integer getDelay() {
-        return delay;
+        return DELAY;
     }
 
     /**
@@ -506,11 +496,11 @@ public class FileSystemDynamicConfiguration extends AbstractDynamicConfiguration
      * @see #detectPoolingBasedWatchService(Optional)
      */
     protected static boolean isBasedPoolingWatchService() {
-        return basedPoolingWatchService;
+        return BASED_POOLING_WATCH_SERVICE;
     }
 
     protected static ThreadPoolExecutor getWatchEventsLoopThreadPool() {
-        return watchEventsLoopThreadPool;
+        return WATCH_EVENTS_LOOP_THREAD_POOL;
     }
 
     protected ThreadPoolExecutor getWorkersThreadPool() {
@@ -536,20 +526,15 @@ public class FileSystemDynamicConfiguration extends AbstractDynamicConfiguration
     }
 
     private static Integer initDelay(WatchEvent.Modifier[] modifiers) {
-        return Stream.of(modifiers)
-                .filter(modifier -> modifier instanceof SensitivityWatchEventModifier)
-                .map(SensitivityWatchEventModifier.class::cast)
-                .map(SensitivityWatchEventModifier::sensitivityValueInSeconds)
-                .max(Integer::compareTo)
-                .orElse(null);
+        if (isBasedPoolingWatchService()) {
+            return 2;
+        } else {
+            return null;
+        }
     }
 
     private static WatchEvent.Modifier[] initWatchEventModifiers() {
-        if (isBasedPoolingWatchService()) { // If based on PollingWatchService, High sensitivity will be used
-            return of(SensitivityWatchEventModifier.HIGH);
-        } else {
-            return of();
-        }
+        return of();
     }
 
     /**

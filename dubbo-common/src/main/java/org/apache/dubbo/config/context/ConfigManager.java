@@ -31,9 +31,10 @@ import org.apache.dubbo.config.ModuleConfig;
 import org.apache.dubbo.config.MonitorConfig;
 import org.apache.dubbo.config.ProtocolConfig;
 import org.apache.dubbo.config.ProviderConfig;
+import org.apache.dubbo.config.ReferenceConfigBase;
 import org.apache.dubbo.config.RegistryConfig;
-import org.apache.dubbo.config.service.ReferenceConfig;
-import org.apache.dubbo.config.service.ServiceConfig;
+import org.apache.dubbo.config.ServiceConfigBase;
+import org.apache.dubbo.config.SslConfig;
 import org.apache.dubbo.rpc.model.ApplicationModel;
 
 import java.util.Collection;
@@ -61,8 +62,10 @@ import static org.apache.dubbo.config.Constants.PROTOCOLS_SUFFIX;
 import static org.apache.dubbo.config.Constants.REGISTRIES_SUFFIX;
 
 public class ConfigManager extends LifecycleAdapter implements FrameworkExt {
-    public static final String NAME = "config";
+
     private static final Logger logger = LoggerFactory.getLogger(ConfigManager.class);
+
+    public static final String NAME = "config";
 
     private final Map<String, Map<String, AbstractConfig>> configsCache = newMap();
 
@@ -111,6 +114,14 @@ public class ConfigManager extends LifecycleAdapter implements FrameworkExt {
 
     public Optional<MetricsConfig> getMetrics() {
         return ofNullable(getConfig(getTagName(MetricsConfig.class)));
+    }
+
+    public void setSsl(SslConfig sslConfig) {
+        addConfig(sslConfig, true);
+    }
+
+    public Optional<SslConfig> getSsl() {
+        return ofNullable(getConfig(getTagName(SslConfig.class)));
     }
 
     // ConfigCenterConfig correlative methods
@@ -167,8 +178,15 @@ public class ConfigManager extends LifecycleAdapter implements FrameworkExt {
         return ofNullable(getConfig(getTagName(ProviderConfig.class), id));
     }
 
+    /**
+     * Only allows one default ProviderConfig
+     */
     public Optional<ProviderConfig> getDefaultProvider() {
-        return getProvider(DEFAULT_KEY);
+        List<ProviderConfig> providerConfigs = getDefaultConfigs(getConfigsMap(getTagName(ProviderConfig.class)));
+        if (CollectionUtils.isNotEmpty(providerConfigs)) {
+            return Optional.of(providerConfigs.get(0));
+        }
+        return Optional.empty();
     }
 
     public Collection<ProviderConfig> getProviders() {
@@ -189,8 +207,15 @@ public class ConfigManager extends LifecycleAdapter implements FrameworkExt {
         return ofNullable(getConfig(getTagName(ConsumerConfig.class), id));
     }
 
+    /**
+     * Only allows one default ConsumerConfig
+     */
     public Optional<ConsumerConfig> getDefaultConsumer() {
-        return getConsumer(DEFAULT_KEY);
+        List<ConsumerConfig> consumerConfigs = getDefaultConfigs(getConfigsMap(getTagName(ConsumerConfig.class)));
+        if (CollectionUtils.isNotEmpty(consumerConfigs)) {
+            return Optional.of(consumerConfigs.get(0));
+        }
+        return Optional.empty();
     }
 
     public Collection<ConsumerConfig> getConsumers() {
@@ -268,38 +293,38 @@ public class ConfigManager extends LifecycleAdapter implements FrameworkExt {
 
     // ServiceConfig correlative methods
 
-    public void addService(ServiceConfig<?> serviceConfig) {
+    public void addService(ServiceConfigBase<?> serviceConfig) {
         addConfig(serviceConfig);
     }
 
-    public void addServices(Iterable<ServiceConfig<?>> serviceConfigs) {
+    public void addServices(Iterable<ServiceConfigBase<?>> serviceConfigs) {
         serviceConfigs.forEach(this::addService);
     }
 
-    public Collection<ServiceConfig> getServices() {
-        return getConfigs(getTagName(ServiceConfig.class));
+    public Collection<ServiceConfigBase> getServices() {
+        return getConfigs(getTagName(ServiceConfigBase.class));
     }
 
-    public <T> ServiceConfig<T> getService(String id) {
-        return getConfig(getTagName(ServiceConfig.class), id);
+    public <T> ServiceConfigBase<T> getService(String id) {
+        return getConfig(getTagName(ServiceConfigBase.class), id);
     }
 
     // ReferenceConfig correlative methods
 
-    public void addReference(ReferenceConfig<?> referenceConfig) {
+    public void addReference(ReferenceConfigBase<?> referenceConfig) {
         addConfig(referenceConfig);
     }
 
-    public void addReferences(Iterable<ReferenceConfig<?>> referenceConfigs) {
+    public void addReferences(Iterable<ReferenceConfigBase<?>> referenceConfigs) {
         referenceConfigs.forEach(this::addReference);
     }
 
-    public Collection<ReferenceConfig<?>> getReferences() {
-        return getConfigs(getTagName(ReferenceConfig.class));
+    public Collection<ReferenceConfigBase<?>> getReferences() {
+        return getConfigs(getTagName(ReferenceConfigBase.class));
     }
 
-    public <T> ReferenceConfig<T> getReference(String id) {
-        return getConfig(getTagName(ReferenceConfig.class), id);
+    public <T> ReferenceConfigBase<T> getReference(String id) {
+        return getConfig(getTagName(ReferenceConfigBase.class), id);
     }
 
     protected static Set<String> getSubProperties(Map<String, String> properties, String prefix) {
@@ -340,7 +365,6 @@ public class ConfigManager extends LifecycleAdapter implements FrameworkExt {
         }
     }
 
-    // For test purpose
     public void clear() {
         write(() -> {
             this.configsCache.clear();
@@ -389,10 +413,10 @@ public class ConfigManager extends LifecycleAdapter implements FrameworkExt {
 //                throw new IllegalStateException("No such " + configType.getName() + " is found");
                 return null;
             } else if (size > 1) {
-                throw new IllegalStateException("The expected single matching " + configType + " but found " + size + " instances");
-            } else {
-                return configsMap.values().iterator().next();
+                logger.warn("Expected single matching of " + configType + ", but found " + size + " instances, will randomly pick the first one.");
             }
+
+            return configsMap.values().iterator().next();
         });
     }
 
@@ -436,7 +460,7 @@ public class ConfigManager extends LifecycleAdapter implements FrameworkExt {
     private static void checkDuplicate(AbstractConfig oldOne, AbstractConfig newOne) throws IllegalStateException {
         if (oldOne != null && !oldOne.equals(newOne)) {
             String configName = oldOne.getClass().getSimpleName();
-            throw new IllegalStateException("Duplicate Config found for " + configName + ", you should use only one unique " + configName + " for one application.");
+            logger.warn("Duplicate Config found for " + configName + ", you should use only one unique " + configName + " for one application.");
         }
     }
 
@@ -479,7 +503,7 @@ public class ConfigManager extends LifecycleAdapter implements FrameworkExt {
     }
 
     static <C extends AbstractConfig> boolean isDefaultConfig(C config) {
-        Boolean isDefault = getProperty(config, "default");
+        Boolean isDefault = getProperty(config, "isDefault");
         return isDefault == null || TRUE.equals(isDefault);
     }
 

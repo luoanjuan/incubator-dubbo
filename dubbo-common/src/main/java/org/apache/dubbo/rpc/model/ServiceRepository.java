@@ -18,17 +18,20 @@ package org.apache.dubbo.rpc.model;
 
 import org.apache.dubbo.common.context.FrameworkExt;
 import org.apache.dubbo.common.context.LifecycleAdapter;
+import org.apache.dubbo.common.extension.ExtensionLoader;
 import org.apache.dubbo.common.utils.CollectionUtils;
-import org.apache.dubbo.config.service.ReferenceConfig;
-import org.apache.dubbo.config.service.ServiceConfig;
+import org.apache.dubbo.config.ReferenceConfigBase;
+import org.apache.dubbo.config.ServiceConfigBase;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+
+import static org.apache.dubbo.common.BaseServiceMetadata.interfaceFromServiceKey;
+import static org.apache.dubbo.common.BaseServiceMetadata.versionFromServiceKey;
 
 public class ServiceRepository extends LifecycleAdapter implements FrameworkExt {
 
@@ -43,45 +46,83 @@ public class ServiceRepository extends LifecycleAdapter implements FrameworkExt 
     // providers
     private ConcurrentMap<String, ProviderModel> providers = new ConcurrentHashMap<>();
 
+    // useful to find a provider model quickly with serviceInterfaceName:version
+    private ConcurrentMap<String, ProviderModel> providersWithoutGroup = new ConcurrentHashMap<>();
+
+    public ServiceRepository() {
+        Set<BuiltinServiceDetector> builtinServices
+                = ExtensionLoader.getExtensionLoader(BuiltinServiceDetector.class).getSupportedExtensionInstances();
+        if (CollectionUtils.isNotEmpty(builtinServices)) {
+            for (BuiltinServiceDetector service : builtinServices) {
+                registerService(service.getService());
+            }
+        }
+    }
+
     public ServiceDescriptor registerService(Class<?> interfaceClazz) {
         return services.computeIfAbsent(interfaceClazz.getName(),
                 _k -> new ServiceDescriptor(interfaceClazz));
     }
 
+    /**
+     * See {@link #registerService(Class)}
+     * <p>
+     * we assume:
+     * 1. services with different interfaces are not allowed to have the same path.
+     * 2. services share the same interface but has different group/version can share the same path.
+     * 3. path's default value is the name of the interface.
+     *
+     * @param path
+     * @param interfaceClass
+     * @return
+     */
+    public ServiceDescriptor registerService(String path, Class<?> interfaceClass) {
+        ServiceDescriptor serviceDescriptor = registerService(interfaceClass);
+        // if path is different with interface name, add extra path mapping
+        if (!interfaceClass.getName().equals(path)) {
+            services.putIfAbsent(path, serviceDescriptor);
+        }
+        return serviceDescriptor;
+    }
+
     public void registerConsumer(String serviceKey,
-                                 Map<String, Object> attributes,
-                                 ServiceDescriptor serviceModel,
-                                 ReferenceConfig<?> rc,
+                                 ServiceDescriptor serviceDescriptor,
+                                 ReferenceConfigBase<?> rc,
                                  Object proxy,
                                  ServiceMetadata serviceMetadata) {
-        consumers.computeIfAbsent(
-                serviceKey,
-                _k -> new ConsumerModel(
-                        serviceMetadata.getServiceKey(),
-                        proxy,
-                        serviceModel,
-                        rc,
-                        attributes,
-                        serviceMetadata
-                )
-        );
+        ConsumerModel consumerModel = new ConsumerModel(serviceMetadata.getServiceKey(), proxy, serviceDescriptor, rc,
+                serviceMetadata);
+        consumers.putIfAbsent(serviceKey, consumerModel);
+    }
+
+    public void reRegisterConsumer(String newServiceKey, String serviceKey) {
+        ConsumerModel consumerModel = consumers.get(serviceKey);
+        consumerModel.setServiceKey(newServiceKey);
+        consumers.putIfAbsent(newServiceKey, consumerModel);
+        consumers.remove(serviceKey);
+
     }
 
     public void registerProvider(String serviceKey,
                                  Object serviceInstance,
                                  ServiceDescriptor serviceModel,
-                                 ServiceConfig<?> serviceConfig,
+                                 ServiceConfigBase<?> serviceConfig,
                                  ServiceMetadata serviceMetadata) {
-        providers.computeIfAbsent(
-                serviceKey,
-                _k -> new ProviderModel(
-                        serviceKey,
-                        serviceInstance,
-                        serviceModel,
-                        serviceConfig,
-                        serviceMetadata
-                )
-        );
+        ProviderModel providerModel = new ProviderModel(serviceKey, serviceInstance, serviceModel, serviceConfig,
+                serviceMetadata);
+        providers.putIfAbsent(serviceKey, providerModel);
+        providersWithoutGroup.putIfAbsent(keyWithoutGroup(serviceKey), providerModel);
+    }
+
+    private static String keyWithoutGroup(String serviceKey) {
+        return interfaceFromServiceKey(serviceKey) + ":" + versionFromServiceKey(serviceKey);
+    }
+
+    public void reRegisterProvider(String newServiceKey, String serviceKey) {
+        ProviderModel providerModel = providers.get(serviceKey);
+        providerModel.setServiceKey(newServiceKey);
+        providers.putIfAbsent(newServiceKey, providerModel);
+        providers.remove(serviceKey);
     }
 
     public List<ServiceDescriptor> getAllServices() {
@@ -97,7 +138,8 @@ public class ServiceRepository extends LifecycleAdapter implements FrameworkExt 
         if (serviceDescriptor == null) {
             return null;
         }
-        Set<MethodDescriptor> methods = serviceDescriptor.getMethods(methodName);
+
+        List<MethodDescriptor> methods = serviceDescriptor.getMethods(methodName);
         if (CollectionUtils.isEmpty(methods)) {
             return null;
         }
@@ -110,6 +152,10 @@ public class ServiceRepository extends LifecycleAdapter implements FrameworkExt 
 
     public ProviderModel lookupExportedService(String serviceKey) {
         return providers.get(serviceKey);
+    }
+
+    public ProviderModel lookupExportedServiceWithoutGroup(String key) {
+        return providersWithoutGroup.get(key);
     }
 
     public List<ConsumerModel> getReferredServices() {
@@ -126,5 +172,6 @@ public class ServiceRepository extends LifecycleAdapter implements FrameworkExt 
         services.clear();
         consumers.clear();
         providers.clear();
+        providersWithoutGroup.clear();
     }
 }

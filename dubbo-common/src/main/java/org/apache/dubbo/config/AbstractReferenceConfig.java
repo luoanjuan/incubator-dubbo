@@ -17,7 +17,6 @@
 package org.apache.dubbo.config;
 
 import org.apache.dubbo.common.utils.StringUtils;
-import org.apache.dubbo.config.service.ReferenceConfig;
 import org.apache.dubbo.config.support.Parameter;
 import org.apache.dubbo.rpc.support.ProtocolUtils;
 
@@ -29,7 +28,7 @@ import static org.apache.dubbo.common.constants.CommonConstants.STUB_EVENT_KEY;
  * AbstractConsumerConfig
  *
  * @export
- * @see ReferenceConfig
+ * @see ReferenceConfigBase
  */
 public abstract class AbstractReferenceConfig extends AbstractInterfaceConfig {
 
@@ -60,7 +59,7 @@ public abstract class AbstractReferenceConfig extends AbstractInterfaceConfig {
     /**
      * Lazy create connection
      */
-    protected Boolean lazy = false;
+    protected Boolean lazy;
 
     protected String reconnect;
 
@@ -81,6 +80,13 @@ public abstract class AbstractReferenceConfig extends AbstractInterfaceConfig {
      * The remote service group the customer side will reference
      */
     protected String group;
+
+    /**
+     * declares which app or service this interface belongs to
+     */
+    protected String providedBy;
+
+    protected String router;
 
     public Boolean isCheck() {
         return check;
@@ -220,5 +226,23 @@ public abstract class AbstractReferenceConfig extends AbstractInterfaceConfig {
 
     public void setGroup(String group) {
         this.group = group;
+    }
+
+    @Parameter(key = "provided-by")
+    public String getProvidedBy() {
+        return providedBy;
+    }
+
+    public void setProvidedBy(String providedBy) {
+        this.providedBy = providedBy;
+    }
+
+    @Parameter(key = "router", append = true)
+    public String getRouter() {
+        return router;
+    }
+
+    public void setRouter(String router) {
+        this.router = router;
     }
 }
